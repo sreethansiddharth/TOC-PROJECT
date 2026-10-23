@@ -14,6 +14,18 @@ import os
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from .automata.railway_automaton import RailwayAutomaton
+from .automata.nfa_dfa import (
+    network_to_automaton_model,
+    classify_determinism,
+    simulate_nfa,
+    convert_nfa_to_dfa
+)
+from .automata.demo_networks import (
+    load_all_fixtures,
+    get_fixture_by_id,
+    fixture_to_automaton,
+    run_curated_tests
+)
 from .db import (
     init_db,
     save_network_to_db,
@@ -279,6 +291,152 @@ def delete_saved_network(network_id):
     if not success:
         return jsonify({"error": "Network not found"}), 404
     return jsonify({"message": "Network deleted"})
+
+
+# =========================================================================
+# UPGRADE 2: Step-by-Step Route Verification Trace API
+# =========================================================================
+
+@app.route("/api/routes/verify", methods=["POST"])
+def verify_route_with_trace():
+    """
+    Step-by-step route verification trace endpoint.
+    Accepts: {
+        "network_id": "...", // optional
+        "source": "A",       // optional
+        "destination": "D",  // optional
+        "train_type": "Local",
+        "route": ["A", "B", "C", "D"]
+    }
+    """
+    data = request.json or {}
+    route = data.get("route", [])
+    train_type = data.get("train_type", "Express")
+
+    # If route not provided but source and destination are, try shortest path or empty
+    if not route and data.get("source") and data.get("destination"):
+        route = [data.get("source"), data.get("destination")]
+
+    trace_result = active_network.validate_route(route, train_type)
+    return jsonify(trace_result)
+
+
+# =========================================================================
+# UPGRADE 1: DFA vs NFA Automata Lab API
+# =========================================================================
+
+@app.route("/api/automata/model", methods=["GET"])
+def get_automata_model():
+    """Extract formal automaton M = (Q, Sigma, delta, q0, F) from active network."""
+    alphabet_mode = request.args.get("alphabet_mode", "train_types")
+    train_filter = request.args.get("train_type")
+    model = network_to_automaton_model(active_network.to_dict(), alphabet_mode=alphabet_mode, train_type_filter=train_filter)
+    return jsonify(model)
+
+
+@app.route("/api/automata/classify", methods=["GET"])
+def classify_automata():
+    """Analyze determinism and classify active network as DFA or NFA with transition table."""
+    alphabet_mode = request.args.get("alphabet_mode", "train_types")
+    train_filter = request.args.get("train_type")
+    model = network_to_automaton_model(active_network.to_dict(), alphabet_mode=alphabet_mode, train_type_filter=train_filter)
+    classification = classify_determinism(model)
+    return jsonify({
+        "model": model,
+        "classification": classification
+    })
+
+
+@app.route("/api/automata/simulate-nfa", methods=["POST"])
+def simulate_nfa_input():
+    """Simulate sequence of input symbols on NFA with full state subset trace."""
+    data = request.json or {}
+    input_symbols = data.get("input_symbols", [])
+    alphabet_mode = data.get("alphabet_mode", "train_types")
+    train_filter = data.get("train_type")
+
+    model = data.get("custom_automaton")
+    if not model:
+        model = network_to_automaton_model(active_network.to_dict(), alphabet_mode=alphabet_mode, train_type_filter=train_filter)
+
+    sim_res = simulate_nfa(model, input_symbols)
+    return jsonify(sim_res)
+
+
+@app.route("/api/automata/convert-to-dfa", methods=["POST"])
+def convert_to_dfa():
+    """Convert NFA to equivalent DFA using subset (powerset) construction."""
+    data = request.json or {}
+    alphabet_mode = data.get("alphabet_mode", "train_types")
+    train_filter = data.get("train_type")
+    include_trap = data.get("include_trap", True)
+
+    model = data.get("custom_automaton")
+    if not model:
+        model = network_to_automaton_model(active_network.to_dict(), alphabet_mode=alphabet_mode, train_type_filter=train_filter)
+
+    dfa_res = convert_nfa_to_dfa(model, include_trap=include_trap)
+    return jsonify(dfa_res)
+
+
+# =========================================================================
+# UPGRADE 3: Automated Test-Network Generator API
+# =========================================================================
+
+@app.route("/api/demo-networks", methods=["GET"])
+def list_demo_networks():
+    """List all available predefined test-network fixtures."""
+    fixtures = load_all_fixtures()
+    summary = []
+    for f in fixtures:
+        summary.append({
+            "id": f.get("id"),
+            "name": f.get("name"),
+            "scenario": f.get("scenario", f.get("name")),
+            "description": f.get("description"),
+            "start_station": f.get("start_station"),
+            "accepting_stations": f.get("accepting_stations", []),
+            "stations_count": len(f.get("stations", [])),
+            "expected_outcomes": f.get("expected_outcomes", {})
+        })
+    return jsonify({"demo_networks": summary, "total": len(summary)})
+
+
+@app.route("/api/demo-networks/<network_id>", methods=["GET"])
+def get_demo_network(network_id):
+    """Retrieve full details of a specific demo network fixture."""
+    fixture = get_fixture_by_id(network_id)
+    if not fixture:
+        return jsonify({"error": f"Demo network '{network_id}' not found"}), 404
+    return jsonify({"fixture": fixture})
+
+
+@app.route("/api/demo-networks/load/<network_id>", methods=["POST"])
+def load_demo_network(network_id):
+    """
+    Load a demo network fixture into active_network without overwriting user-saved networks.
+    """
+    global active_network
+    fixture = get_fixture_by_id(network_id)
+    if not fixture:
+        return jsonify({"error": f"Demo network '{network_id}' not found"}), 404
+
+    active_network = fixture_to_automaton(fixture)
+    return jsonify({
+        "message": f"Successfully loaded demo network '{active_network.name}'",
+        "network": active_network.to_dict(),
+        "fixture": fixture
+    })
+
+
+@app.route("/api/demo-networks/run-tests", methods=["POST"])
+def run_demo_tests():
+    """
+    Run curated application-level test suite against all demo networks.
+    Safe and isolated.
+    """
+    test_results = run_curated_tests()
+    return jsonify(test_results)
 
 
 if __name__ == "__main__":

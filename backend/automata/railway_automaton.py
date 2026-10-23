@@ -168,99 +168,205 @@ class RailwayAutomaton:
         """
         train_type = train_type.strip()
         if not route:
+            msg = "Route cannot be empty."
             return {
                 "accepted": False,
-                "reason": "Route cannot be empty.",
+                "valid": False,
+                "reason": msg,
+                "message": msg,
+                "train_type": train_type,
+                "route": [],
                 "failure_station": None,
                 "failure_step": None,
                 "failure_cause": "EMPTY_ROUTE",
-                "route_path": []
+                "failure_transition": None,
+                "reason_code": "INVALID_ROUTE_FORMAT",
+                "route_path": [],
+                "steps": []
             }
 
         cleaned_route = [s.strip() for s in route if s.strip()]
         if not cleaned_route:
+            msg = "Route contains no valid station names."
             return {
                 "accepted": False,
-                "reason": "Route contains no valid station names.",
+                "valid": False,
+                "reason": msg,
+                "message": msg,
+                "train_type": train_type,
+                "route": cleaned_route,
                 "failure_station": None,
                 "failure_step": None,
                 "failure_cause": "EMPTY_ROUTE",
-                "route_path": []
+                "failure_transition": None,
+                "reason_code": "INVALID_ROUTE_FORMAT",
+                "route_path": cleaned_route,
+                "steps": []
             }
 
         start_node = cleaned_route[0]
         if start_node not in self.stations:
+            msg = f"Start station '{start_node}' does not exist in the network."
             return {
                 "accepted": False,
-                "reason": f"Start station '{start_node}' does not exist in the network.",
+                "valid": False,
+                "reason": msg,
+                "message": msg,
+                "train_type": train_type,
+                "route": cleaned_route,
                 "failure_station": start_node,
                 "failure_step": 0,
                 "failure_cause": "INVALID_SOURCE",
-                "route_path": cleaned_route
+                "failure_transition": None,
+                "reason_code": "UNKNOWN_STATION",
+                "route_path": cleaned_route,
+                "steps": []
             }
 
-        # Step-by-step automata transition verification
+        # Step-by-step automata transition verification with trace accumulation
+        steps = []
         for idx in range(len(cleaned_route) - 1):
             curr_station = cleaned_route[idx]
             next_station = cleaned_route[idx + 1]
 
             if next_station not in self.stations:
+                fail_msg = f"Station '{next_station}' does not exist in the railway network."
+                steps.append({
+                    "index": idx + 1,
+                    "from": curr_station,
+                    "to": next_station,
+                    "status": "failed",
+                    "reason_code": "UNKNOWN_STATION",
+                    "message": fail_msg,
+                    "permitted_train_types": []
+                })
                 return {
                     "accepted": False,
-                    "reason": f"Station '{next_station}' does not exist in the railway network.",
+                    "valid": False,
+                    "reason": fail_msg,
+                    "message": fail_msg,
+                    "train_type": train_type,
+                    "route": cleaned_route,
                     "failure_station": curr_station,
                     "failure_step": idx,
                     "failure_cause": "MISSING_TRACK",
-                    "route_path": cleaned_route
+                    "failure_transition": {"from": curr_station, "to": next_station},
+                    "reason_code": "UNKNOWN_STATION",
+                    "route_path": cleaned_route,
+                    "steps": steps
                 }
 
             # Check if any track exists from curr to next
             all_permitted_types = self.get_track_train_types(curr_station, next_station)
             if not all_permitted_types:
+                fail_msg = f"No physical track connection exists from station '{curr_station}' to '{next_station}'."
+                steps.append({
+                    "index": idx + 1,
+                    "from": curr_station,
+                    "to": next_station,
+                    "status": "failed",
+                    "reason_code": "MISSING_TRANSITION",
+                    "message": fail_msg,
+                    "permitted_train_types": []
+                })
                 return {
                     "accepted": False,
-                    "reason": f"No physical track connection exists from station '{curr_station}' to '{next_station}'.",
+                    "valid": False,
+                    "reason": fail_msg,
+                    "message": fail_msg,
+                    "train_type": train_type,
+                    "route": cleaned_route,
                     "failure_station": curr_station,
                     "failure_step": idx,
                     "failure_cause": "MISSING_TRACK",
-                    "route_path": cleaned_route
+                    "failure_transition": {"from": curr_station, "to": next_station},
+                    "reason_code": "MISSING_TRANSITION",
+                    "route_path": cleaned_route,
+                    "steps": steps
                 }
 
             # Check train type permission
             if train_type not in all_permitted_types:
+                fail_msg = (
+                    f"No permitted {train_type} transition from {curr_station} to {next_station}. "
+                    f"Permitted types: {all_permitted_types}."
+                )
+                steps.append({
+                    "index": idx + 1,
+                    "from": curr_station,
+                    "to": next_station,
+                    "status": "failed",
+                    "reason_code": "TRANSITION_NOT_ALLOWED",
+                    "message": fail_msg,
+                    "permitted_train_types": all_permitted_types
+                })
                 return {
                     "accepted": False,
+                    "valid": False,
                     "reason": (
                         f"Track from '{curr_station}' to '{next_station}' is restricted. "
                         f"Permits {all_permitted_types}, but journey train type is '{train_type}'."
                     ),
+                    "message": fail_msg,
+                    "train_type": train_type,
+                    "route": cleaned_route,
                     "failure_station": curr_station,
                     "failure_step": idx,
                     "failure_cause": "TRAIN_RESTRICTION",
-                    "route_path": cleaned_route
+                    "failure_transition": {"from": curr_station, "to": next_station},
+                    "reason_code": "TRANSITION_NOT_ALLOWED",
+                    "route_path": cleaned_route,
+                    "steps": steps
                 }
+
+            # Hop is valid
+            steps.append({
+                "index": idx + 1,
+                "from": curr_station,
+                "to": next_station,
+                "status": "passed",
+                "reason_code": "TRANSITION_PERMITTED",
+                "message": f"Transition from '{curr_station}' to '{next_station}' is permitted for {train_type}.",
+                "permitted_train_types": all_permitted_types
+            })
 
         destination = cleaned_route[-1]
         # Check destination is an accepting state
         if self.accepting_stations and (destination not in self.accepting_stations):
+            fail_msg = f"Route terminates at station '{destination}', which is not an accepting / destination station."
             return {
                 "accepted": False,
-                "reason": (
-                    f"Route terminates at station '{destination}', which is not an accepting / destination station."
-                ),
+                "valid": False,
+                "reason": fail_msg,
+                "message": fail_msg,
+                "train_type": train_type,
+                "route": cleaned_route,
                 "failure_station": destination,
                 "failure_step": len(cleaned_route) - 1,
                 "failure_cause": "NOT_ACCEPTING",
-                "route_path": cleaned_route
+                "failure_transition": None,
+                "reason_code": "DESTINATION_NOT_ACCEPTING",
+                "route_path": cleaned_route,
+                "steps": steps,
+                "is_accepting_destination": False
             }
 
+        success_msg = f"Proposed journey successfully verified and accepted under '{train_type}' service."
         return {
             "accepted": True,
-            "reason": f"Proposed journey successfully verified and accepted under '{train_type}' service.",
+            "valid": True,
+            "reason": success_msg,
+            "message": success_msg,
+            "train_type": train_type,
+            "route": cleaned_route,
             "failure_station": None,
             "failure_step": None,
             "failure_cause": None,
-            "route_path": cleaned_route
+            "failure_transition": None,
+            "reason_code": "SUCCESS",
+            "route_path": cleaned_route,
+            "steps": steps,
+            "is_accepting_destination": True
         }
 
     def find_dead_ends(self, train_type: str) -> List[str]:

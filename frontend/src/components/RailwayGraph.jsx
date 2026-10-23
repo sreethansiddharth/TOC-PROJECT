@@ -142,6 +142,8 @@ export default function RailwayGraph({
   trainType = 'Express',
   shortestPathResult = null,
   verificationResult = null,
+  activeTraceStep = null,
+  failureTransition = null,
   onSelectStation = () => {},
   onStationDrag = () => {}
 }) {
@@ -894,6 +896,8 @@ export default function RailwayGraph({
 
             const isRouteEdge = isEdgeInRoute(src, target);
             const isShortestEdge = isEdgeInShortest(src, target);
+            const isActiveTraceEdge = Boolean(activeTraceStep && activeTraceStep.from === src && activeTraceStep.to === target);
+            const isFailedTransitionEdge = Boolean(failureTransition && failureTransition.from === src && failureTransition.to === target);
 
             // Compute geometric vector and normals for parallel steel rails
             const dx = p2.x - p1.x;
@@ -936,7 +940,18 @@ export default function RailwayGraph({
             let railWidth = 1.6;
             let arrowMarker = 'url(#track-arrow)';
 
-            if (isShortestEdge) {
+            if (isFailedTransitionEdge) {
+              ballastColor = '#4c0519';
+              sleeperColor = '#f43f5e';
+              railColor = '#fb7185';
+              railWidth = 3.0;
+            } else if (isActiveTraceEdge) {
+              ballastColor = '#0c4a6e';
+              sleeperColor = '#38bdf8';
+              railColor = '#7dd3fc';
+              railWidth = 3.0;
+              arrowMarker = 'url(#track-arrow-active)';
+            } else if (isShortestEdge) {
               ballastColor = '#064e3b';
               sleeperColor = '#10b981';
               railColor = '#34d399';
@@ -999,18 +1014,26 @@ export default function RailwayGraph({
                   strokeLinecap="round"
                 />
 
-                {/* Layer D: Animated Electric Current Pulse for Shortest / Verified Route */}
-                {(isShortestEdge || isRouteEdge) && (
+                {/* Layer D: Animated Electric Current Pulse for Shortest / Verified Route / Active Trace */}
+                {(isShortestEdge || isRouteEdge || isActiveTraceEdge || isFailedTransitionEdge) && (
                   <line
                     x1={xStart}
                     y1={yStart}
                     x2={xEnd}
                     y2={yEnd}
-                    stroke={isShortestEdge ? '#6ee7b7' : '#7dd3fc'}
-                    strokeWidth="2.5"
+                    stroke={
+                      isFailedTransitionEdge
+                        ? '#f43f5e'
+                        : isActiveTraceEdge
+                        ? '#38bdf8'
+                        : isShortestEdge
+                        ? '#6ee7b7'
+                        : '#7dd3fc'
+                    }
+                    strokeWidth={isFailedTransitionEdge || isActiveTraceEdge ? '3.5' : '2.5'}
                     strokeDasharray="8 24"
                     className="flowing-track"
-                    opacity="0.9"
+                    opacity="0.95"
                   />
                 )}
 

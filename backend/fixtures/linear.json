@@ -1,0 +1,26 @@
+{
+  "id": "linear",
+  "name": "Linear Network",
+  "scenario": "A. Linear Network",
+  "description": "Simple sequential line A -> B -> C -> D. Demonstrates accepted route and single deterministic shortest path.",
+  "start_station": "A",
+  "accepting_stations": ["D"],
+  "stations": ["A", "B", "C", "D"],
+  "station_metadata": {
+    "A": {"x": 120, "y": 250, "label": "Station A (Start)"},
+    "B": {"x": 280, "y": 250, "label": "Station B"},
+    "C": {"x": 440, "y": 250, "label": "Station C"},
+    "D": {"x": 600, "y": 250, "label": "Station D (Terminus)"}
+  },
+  "transitions": [
+    {"from": "A", "to": "B", "train_types": ["Express", "Local"]},
+    {"from": "B", "to": "C", "train_types": ["Express", "Local"]},
+    {"from": "C", "to": "D", "train_types": ["Express", "Local"]}
+  ],
+  "expected_outcomes": {
+    "valid_route": ["A", "B", "C", "D"],
+    "valid_train_type": "Express",
+    "shortest_path_hops": 3,
+    "dead_ends": []
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "id": "multiple-routes",
+  "name": "Multiple Routes Network",
+  "scenario": "F. Multiple-Route Network",
+  "description": "Three distinct corridors between A and D: 2 hops (Express/HighSpeed), 3 hops (Express/Local), and 4 hops (Local scenic). Demonstrates BFS shortest path correctness.",
+  "start_station": "A",
+  "accepting_stations": ["D"],
+  "stations": ["A", "Fast_Hub", "B", "C", "S1", "S2", "S3", "D"],
+  "station_metadata": {
+    "A": {"x": 100, "y": 250, "label": "Station A (Origin)"},
+    "Fast_Hub": {"x": 350, "y": 120, "label": "Fast Hub (Bypass)"},
+    "B": {"x": 280, "y": 250, "label": "Station B"},
+    "C": {"x": 440, "y": 250, "label": "Station C"},
+    "S1": {"x": 220, "y": 380, "label": "Scenic S1"},
+    "S2": {"x": 350, "y": 380, "label": "Scenic S2"},
+    "S3": {"x": 480, "y": 380, "label": "Scenic S3"},
+    "D": {"x": 620, "y": 250, "label": "Station D (Terminus)"}
+  },
+  "transitions": [
+    {"from": "A", "to": "Fast_Hub", "train_types": ["Express", "HighSpeed"]},
+    {"from": "Fast_Hub", "to": "D", "train_types": ["Express", "HighSpeed"]},
+    {"from": "A", "to": "B", "train_types": ["Express", "Local"]},
+    {"from": "B", "to": "C", "train_types": ["Express", "Local"]},
+    {"from": "C", "to": "D", "train_types": ["Express", "Local"]},
+    {"from": "A", "to": "S1", "train_types": ["Local"]},
+    {"from": "S1", "to": "S2", "train_types": ["Local"]},
+    {"from": "S2", "to": "S3", "train_types": ["Local"]},
+    {"from": "S3", "to": "D", "train_types": ["Local"]}
+  ],
+  "expected_outcomes": {
+    "shortest_path_express_hops": 2,
+    "shortest_path_express_route": ["A", "Fast_Hub", "D"],
+    "shortest_path_local_hops": 3,
+    "shortest_path_local_route": ["A", "B", "C", "D"]
+  }
+}

@@ -19,11 +19,13 @@ import RailwayGraph from './components/RailwayGraph';
 import NetworkBuilder from './components/NetworkBuilder';
 import RouteVerifier from './components/RouteVerifier';
 import AnalysisReportDrawer from './components/AnalysisReportDrawer';
+import AutomataLab from './components/AutomataLab';
+import TestLab from './components/TestLab';
 
 export default function App() {
   const [network, setNetwork] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('verifier'); // 'verifier' | 'builder' | 'analysis'
+  const [activeTab, setActiveTab] = useState('verifier'); // 'verifier' | 'builder' | 'analysis' | 'automata' | 'testlab'
   const [selectedStation, setSelectedStation] = useState(null);
 
   // Verification & Analysis state
@@ -34,6 +36,13 @@ export default function App() {
   const [deadEnds, setDeadEnds] = useState([]);
   const [consistency, setConsistency] = useState(null);
   const [lastReport, setLastReport] = useState(null);
+
+  // Upgrade 2: Step-by-Step Route Trace state
+  const [activeTraceStep, setActiveTraceStep] = useState(null);
+  const [traceFailureTransition, setTraceFailureTransition] = useState(null);
+
+  // Upgrade 3: Demo networks catalog
+  const [demoNetworksList, setDemoNetworksList] = useState([]);
 
   // Saved networks list
   const [savedNetworks, setSavedNetworks] = useState([]);
@@ -80,6 +89,7 @@ export default function App() {
   useEffect(() => {
     fetchNetwork();
     fetchSavedNetworks();
+    fetchDemoNetworks();
   }, []);
 
   const fetchSavedNetworks = async () => {
@@ -89,6 +99,35 @@ export default function App() {
       setSavedNetworks(data);
     } catch (err) {
       console.error('Failed to list networks:', err);
+    }
+  };
+
+  const fetchDemoNetworks = async () => {
+    try {
+      const res = await fetch('/api/demo-networks');
+      const data = await res.json();
+      setDemoNetworksList(data.demo_networks || []);
+    } catch (err) {
+      console.error('Failed to list demo networks:', err);
+    }
+  };
+
+  const handleLoadDemoScenario = async (demoId) => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/demo-networks/load/${demoId}`, { method: 'POST' });
+      const data = await res.json();
+      setNetwork(data.network);
+      setActiveRoute([]);
+      setVerificationResult(null);
+      setShortestPathResult(null);
+      setActiveTraceStep(null);
+      setTraceFailureTransition(null);
+      runConsistencyAudit(data.network);
+    } catch (err) {
+      console.error('Failed to load demo scenario:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -319,13 +358,28 @@ export default function App() {
         </div>
 
         {/* Global Toolbar Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={handleResetDefault} title="Reset Showcase Demo Network">
             <RotateCcw size={14} /> Reset Network
           </button>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowSaveModal(true)}>
             <Save size={14} /> Save Network
           </button>
+
+          {demoNetworksList.length > 0 && (
+            <select
+              style={{ width: 'auto', fontSize: '0.8rem', padding: '6px 10px', background: 'rgba(56, 189, 248, 0.1)', borderColor: '#38bdf8', color: '#7dd3fc' }}
+              onChange={(e) => e.target.value && handleLoadDemoScenario(e.target.value)}
+              defaultValue=""
+            >
+              <option value="" disabled>Load Demo Scenario (A-F)...</option>
+              {demoNetworksList.map(d => (
+                <option key={d.id} value={d.id} style={{ background: '#0f172a', color: '#fff' }}>
+                  {d.scenario || d.name}
+                </option>
+              ))}
+            </select>
+          )}
 
           {savedNetworks.length > 0 && (
             <select
@@ -365,6 +419,8 @@ export default function App() {
               trainType={trainType}
               shortestPathResult={shortestPathResult}
               verificationResult={verificationResult}
+              activeTraceStep={activeTraceStep}
+              failureTransition={traceFailureTransition}
               onSelectStation={(s) => setSelectedStation(s)}
               onStationDrag={handleStationDrag}
             />
@@ -394,24 +450,38 @@ export default function App() {
         {/* Right Column: Tabbed Control Panel */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Navigation Tabs */}
-          <div style={{ display: 'flex', gap: '6px', background: 'rgba(15, 23, 42, 0.6)', padding: '6px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', gap: '6px', background: 'rgba(15, 23, 42, 0.6)', padding: '6px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
             <button
               className={`btn btn-sm ${activeTab === 'verifier' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: '95px' }}
               onClick={() => setActiveTab('verifier')}
             >
               Route Verifier
             </button>
             <button
               className={`btn btn-sm ${activeTab === 'builder' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: '95px' }}
               onClick={() => setActiveTab('builder')}
             >
               Network Builder
             </button>
             <button
+              className={`btn btn-sm ${activeTab === 'automata' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ flex: 1, minWidth: '95px' }}
+              onClick={() => setActiveTab('automata')}
+            >
+              Automata Lab
+            </button>
+            <button
+              className={`btn btn-sm ${activeTab === 'testlab' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ flex: 1, minWidth: '85px' }}
+              onClick={() => setActiveTab('testlab')}
+            >
+              Test Lab
+            </button>
+            <button
               className={`btn btn-sm ${activeTab === 'analysis' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: '95px' }}
               onClick={() => setActiveTab('analysis')}
             >
               Audit & Reports
@@ -427,6 +497,10 @@ export default function App() {
               verificationResult={verificationResult}
               shortestPathResult={shortestPathResult}
               loading={loading}
+              onTraceStepChange={(step, failTrans) => {
+                setActiveTraceStep(step);
+                setTraceFailureTransition(failTrans);
+              }}
             />
           )}
 
@@ -439,6 +513,24 @@ export default function App() {
               onSetStart={handleSetStart}
               onToggleAccepting={handleToggleAccepting}
               selectedStation={selectedStation}
+            />
+          )}
+
+          {activeTab === 'automata' && (
+            <AutomataLab network={network} />
+          )}
+
+          {activeTab === 'testlab' && (
+            <TestLab
+              onLoadNetwork={(newNet) => {
+                setNetwork(newNet);
+                setActiveRoute([]);
+                setVerificationResult(null);
+                setShortestPathResult(null);
+                setActiveTraceStep(null);
+                setTraceFailureTransition(null);
+                runConsistencyAudit(newNet);
+              }}
             />
           )}
 
